@@ -7,6 +7,8 @@ require("dotenv").config();
 const ModelClient = require("@azure-rest/ai-inference").default;
 const { isUnexpected } = require("@azure-rest/ai-inference");
 const { AzureKeyCredential } = require("@azure/core-auth");
+const path = require("path");
+const xlsx = require("xlsx");
 const Project = require("../models/projectSchema");
 const Team = require("../models/teamSchema");
 const Chat = require("../models/chatSchema");
@@ -136,12 +138,38 @@ async function chatHandler(req, res) {
 	try {
 		let { chatId, projectId, content, selectedDatasets } = req.body;
 		const incomingFiles = req.files || [];
-		// Reduce chat-time files to lightweight metadata only (don't persist buffers or upload to Cloudinary)
-		const tempFiles = incomingFiles.map((f) => ({
-			originalname: f.originalname,
-			mimetype: f.mimetype,
-			size: f.size,
-		}));
+		// Reduce chat-time files to lightweight metadata + parsed head (no raw buffers persisted)
+		const tempFiles = incomingFiles.map((f) => {
+			let headText = "";
+			try {
+				const ext = (path.extname(f.originalname || "").toLowerCase() || "").replace(".", "");
+				if (ext === "csv" || f.mimetype === "text/csv") {
+					const raw = f.buffer?.toString("utf8") || "";
+					const lines = raw.split(/\r?\n/).filter(Boolean).slice(0, 6);
+					if (lines.length > 0) {
+						const headers = lines[0].split(",").map((s) => s.trim());
+						const rows = lines.slice(1);
+						headText = `Columns: ${headers.join(", ")}. Sample:\n${rows.join("\n")}`;
+					}
+				} else if (ext === "xls" || ext === "xlsx" || /spreadsheetml/.test(f.mimetype || "") || /ms-excel/.test(f.mimetype || "")) {
+					const wb = xlsx.read(f.buffer, { type: "buffer" });
+					const firstSheetName = wb.SheetNames[0];
+					const ws = wb.Sheets[firstSheetName];
+					const aoa = xlsx.utils.sheet_to_json(ws, { header: 1, defval: "" });
+					const headers = (aoa[0] || []).map((s) => String(s).trim());
+					const rows = (aoa.slice(1, 6) || []).map((r) => r.join(", "));
+					headText = `Columns: ${headers.join(", ")}. Sample:\n${rows.join("\n")}`;
+				}
+			} catch (_) {
+				// ignore parse errors; headText remains empty
+			}
+			return {
+				originalname: f.originalname,
+				mimetype: f.mimetype,
+				size: f.size,
+				headText,
+			};
+		});
 		// Normalize selectedDatasets from multipart form-data (could be JSON string, single value, or array)
 		if (selectedDatasets) {
 			if (typeof selectedDatasets === "string") {
@@ -213,7 +241,7 @@ async function chatHandler(req, res) {
 			sender: "user",
 			content: content?.trim() || null,
 			selectedDatasets, // save selected dataset IDs
-			tempFiles, // store only metadata for this message
+			tempFiles, // store only metadata + parsed head for this message
 		});
 		chat.messages.push(userMsg._id);
 		await chat.save();
@@ -290,12 +318,16 @@ async function aiReplyHandler(req, res) {
 			});
 		}
 
-		// Add temporary file info (names only)
+		// Add temporary file info with parsed heads
 		if (tempFiles.length > 0) {
-			const tempInfo = tempFiles.map((f) => f.originalname).join(", ");
+			const summaries = tempFiles.map((f) => {
+				const name = f.originalname;
+				const head = (f.headText || "").slice(0, 2000); // safety limit
+				return `File: ${name}\n${head}`;
+			}).join("\n\n");
 			aiPayload.push({
 				role: "system",
-				content: `Temporary files: ${tempInfo}`,
+				content: `Use these temporary datasets. Parse and analyze succinctly.\n\n${summaries}`,
 			});
 		}
 

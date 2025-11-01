@@ -18,8 +18,8 @@ const datasetFileFilter = (req, file, cb) => {
   return cb(new Error("Unsupported file type. Allowed: csv, xls, xlsx."));
 };
 
-// Chat temp uploads: allow broad set of files (handled as raw)
-const chatFileFilter = (req, file, cb) => cb(null, true);
+// Chat temp uploads: restrict to same dataset types (csv/xls/xlsx)
+const chatFileFilter = datasetFileFilter;
 
 const datasetUpload = multer({ storage: datasetStorage, fileFilter: datasetFileFilter, limits: { files: 10 } });
 // For chat-time additional datasets, do NOT upload to Cloudinary. Keep in memory and only forward metadata to AI.
