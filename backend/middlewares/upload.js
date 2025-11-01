@@ -1,24 +1,28 @@
 const multer = require("multer");
 const path = require("path");
-const { storage } = require("../config/cloudinary");
+const { datasetStorage } = require("../config/cloudinary");
 
-// Accept only csv/xls/xlsx by extension or common mimetypes
-const allowedExts = ["csv", "xls", "xlsx"];
-const allowedMimes = [
-	"text/csv",
-	"application/vnd.ms-excel",
-	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-	"application/octet-stream", // some environments label these generically
+// Dataset uploads: only csv/xls/xlsx
+const dsAllowedExts = ["csv", "xls", "xlsx"];
+const dsAllowedMimes = [
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/octet-stream",
 ];
-
-const fileFilter = (req, file, cb) => {
-	const ext = (path.extname(file.originalname || "").toLowerCase() || "").replace(".", "");
-	if (allowedExts.includes(ext) || allowedMimes.includes(file.mimetype)) {
-		return cb(null, true);
-	}
-	return cb(new Error("Unsupported file type. Allowed: csv, xls, xlsx."));
+const datasetFileFilter = (req, file, cb) => {
+  const ext = (path.extname(file.originalname || "").toLowerCase() || "").replace(".", "");
+  if (dsAllowedExts.includes(ext) || dsAllowedMimes.includes(file.mimetype)) {
+    return cb(null, true);
+  }
+  return cb(new Error("Unsupported file type. Allowed: csv, xls, xlsx."));
 };
 
-const upload = multer({ storage, fileFilter, limits: { files: 10 } });
+// Chat temp uploads: allow broad set of files (handled as raw)
+const chatFileFilter = (req, file, cb) => cb(null, true);
 
-module.exports = upload;
+const datasetUpload = multer({ storage: datasetStorage, fileFilter: datasetFileFilter, limits: { files: 10 } });
+// For chat-time additional datasets, do NOT upload to Cloudinary. Keep in memory and only forward metadata to AI.
+const chatUpload = multer({ storage: multer.memoryStorage(), fileFilter: chatFileFilter, limits: { files: 100 } });
+
+module.exports = { datasetUpload, chatUpload };

@@ -116,9 +116,12 @@ export default function ProjectPage({ onLogout, navigateTo, selectedProjectId, s
         <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold">Projects</h1>
-            {adminTeams.length > 0 && (
-              <button onClick={openCreateProject} className="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Create Project</button>
-            )}
+            <div className="flex items-center gap-2">
+              <button className="px-3 py-2 text-sm rounded border hover:bg-gray-50" onClick={() => navigateTo?.('userTeam')}>Team Details</button>
+              {adminTeams.length > 0 && (
+                <button onClick={openCreateProject} className="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Create Project</button>
+              )}
+            </div>
           </div>
 
           {loading ? (

@@ -5,7 +5,7 @@
 
 const express = require("express");
 const { verifyToken } = require("../middlewares/auth");
-const upload = require("../middlewares/upload");
+const { datasetUpload } = require("../middlewares/upload");
 const { verifyTeamAdminForProject } = require("../middlewares/teamAuth");
 const {
 	loadProject,
@@ -64,7 +64,7 @@ router.delete("/:projectId", verifyTeamAdminForProject, deleteProject);
 router.post(
 	"/:projectId/datasets",
 	(req, res, next) => {
-		upload.array("files", 10)(req, res, (err) => {
+		datasetUpload.array("files", 10)(req, res, (err) => {
 			if (err) {
 				const msg = err.message || "Upload failed";
 				const invalid = /invalid|unsupported|format|extension/i.test(msg || "");

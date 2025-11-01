@@ -13,6 +13,11 @@ const ChatSchema = new mongoose.Schema(
 			ref: "Project",
 			required: true,
 		},
+		title: {
+			type: String,
+			trim: true,
+			default: "New chat",
+		},
 		messages: [
 			{
 				type: mongoose.Schema.Types.ObjectId,

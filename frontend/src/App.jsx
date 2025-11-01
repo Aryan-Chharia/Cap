@@ -6,6 +6,7 @@ import OrganisationDashboard from './pages/OrganisationDashboard';
 import ProjectPage from './pages/ProjectPage.jsx';
 import ChatPage from './pages/ChatPage.jsx';
 import DatasetSelectionPage from './pages/DatasetSelectionPage.jsx';
+import TeamPage from './pages/TeamPage.jsx';
 
 export default function App() {
   const [page, setPage] = useState('roleSelect');
@@ -62,6 +63,13 @@ export default function App() {
             navigateTo={setPage}
             selectedProjectId={selectedProjectId}
             setSelectedProjectId={setSelectedProjectId}
+          />
+        );
+      case 'userTeam':
+        return (
+          <TeamPage
+            onLogout={handleLogout}
+            navigateTo={setPage}
           />
         );
       case 'orgDashboard':

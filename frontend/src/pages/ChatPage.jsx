@@ -9,10 +9,17 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
   const [activeChat, setActiveChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [attachFiles, setAttachFiles] = useState([]);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [modalDatasets, setModalDatasets] = useState([]);
+  const [modalSelectedIds, setModalSelectedIds] = useState([]);
+  const [modalUploading, setModalUploading] = useState(false);
+  const [modalError, setModalError] = useState('');
   const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Load projects on mount
-  useEffect(() => {
+  useEffect(() => { 
     (async () => {
       try {
         const { data } = await projectApi.getProjects();
@@ -53,18 +60,57 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const newChat = async () => {
+  const openNewChat = async () => {
+    if (!selectedProjectId) return;
+    try {
+      const { data } = await projectApi.listDatasets(selectedProjectId);
+      setModalDatasets(data?.datasets || []);
+      setModalSelectedIds([]);
+      setModalError('');
+      setShowNewChatModal(true);
+    } catch (e) {
+      console.error('Failed to load datasets for new chat', e);
+      setModalDatasets([]);
+      setModalSelectedIds([]);
+      setShowNewChatModal(true);
+    }
+  };
+
+  const handleModalUpload = async (evt) => {
+    const files = evt.target.files;
+    if (!files || !files.length || !selectedProjectId) return;
+    setModalError('');
+    setModalUploading(true);
+    try {
+      await projectApi.uploadDatasets(selectedProjectId, files);
+      const { data } = await projectApi.listDatasets(selectedProjectId);
+      setModalDatasets(data?.datasets || []);
+    } catch (e) {
+      const msg = e?.response?.data?.error || 'Upload failed.';
+      setModalError(msg);
+    } finally {
+      setModalUploading(false);
+      evt.target.value = '';
+    }
+  };
+
+  const confirmCreateChat = async () => {
     if (!selectedProjectId) return;
     try {
       const { data } = await chatApi.createEmptyChat(selectedProjectId);
       const chat = data?.chat;
       if (chat?._id) {
+        // Persist selected datasets for this chat only
+        const key = `selectedDatasets:${chat._id}`;
+        localStorage.setItem(key, JSON.stringify(modalSelectedIds));
         setProjectChats((prev) => [...prev, chat]);
         setActiveChat(chat);
         setMessages([{ from: 'bot', text: 'New chat created. Ask your question to begin.' }]);
       }
     } catch (e) {
       console.error('Failed to create chat', e);
+    } finally {
+      setShowNewChatModal(false);
     }
   };
 
@@ -85,35 +131,49 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim() || !selectedProjectId || !activeChat?._id) return;
-    const currentText = input;
-    setInput('');
-    setMessages((prev) => [...prev, { from: 'user', text: currentText }]);
-
-    // Retrieve dataset selection stored for the project
-    const dsKey = `selectedDatasets:${selectedProjectId}`;
+    if (!selectedProjectId || !activeChat?._id) return;
+    const typed = input.trim();
+    const hasFiles = (attachFiles && attachFiles.length > 0);
+    // Retrieve dataset selection stored for this chat
+    const dsKey = `selectedDatasets:${activeChat._id}`;
     let selectedDatasetIds = [];
     try {
       const stored = localStorage.getItem(dsKey);
       if (stored) selectedDatasetIds = JSON.parse(stored);
     } catch (_) {}
+    const hasSelection = Array.isArray(selectedDatasetIds) && selectedDatasetIds.length > 0;
+
+    // If user didn't type anything but has datasets or files, auto-use "Analyze these"
+    if (!typed && !(hasSelection || hasFiles)) {
+      // No datasets selected and no files => no answer per new flow
+      return;
+    }
+    const currentText = typed || 'Analyze these';
+    setInput('');
+    // Show the user's message (including the auto text)
+    setMessages((prev) => [...prev, { from: 'user', text: currentText }]);
 
     try {
       await chatApi.sendUserMessage({
         projectId: selectedProjectId,
         chatId: activeChat._id,
         content: currentText,
-        files: [],
+        files: (attachFiles || []),
         selectedDatasetIds,
       });
-
+      // During chat, if the user sent a message (typed or auto 'Analyze these'), always ask AI to reply
       const { data } = await chatApi.aiReply({ projectId: selectedProjectId, chatId: activeChat._id, content: currentText });
-      const botText = data?.botReply || 'Received.';
-      setMessages((prev) => [...prev, { from: 'bot', text: botText }]);
+      const botText = data?.botReply;
+      if (botText) {
+        setMessages((prev) => [...prev, { from: 'bot', text: botText }]);
+      }
     } catch (e) {
       console.error('Message send failed', e);
       setMessages((prev) => [...prev, { from: 'bot', text: 'There was an error processing your message.' }]);
     }
+    setAttachFiles([]);
+    // Reset the file input so selecting the same file again triggers onChange
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
@@ -136,7 +196,7 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
           </div>
 
           <button
-            onClick={newChat}
+            onClick={openNewChat}
             className="mb-3 w-full text-left px-3 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
           >
             + New chat
@@ -150,7 +210,7 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
                   onClick={() => openChat(c)}
                   className={`w-full text-left px-3 py-2 rounded text-sm ${activeChat?._id === c._id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'}`}
                 >
-                  Chat {idx + 1}
+                  {c.title || `Chat ${idx + 1}`}
                 </button>
               ))
             ) : (
@@ -165,12 +225,29 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
             >
               ← Projects
             </button>
+            {/* Dataset selection is only offered at new chat creation time */}
             <button
-              className="w-full text-left px-3 py-2 rounded border text-sm hover:bg-gray-50"
-              onClick={() => navigateTo?.('datasetSelect')}
-              disabled={!selectedProjectId}
+              className="w-full text-left px-3 py-2 rounded border text-sm hover:bg-gray-50 disabled:opacity-50"
+              onClick={async () => {
+                if (!activeChat?._id || !selectedProjectId) return;
+                const current = projectChats.find((c) => c._id === activeChat._id);
+                const proposed = window.prompt('Rename chat', current?.title || '');
+                const title = (proposed || '').trim();
+                if (!title) return;
+                try {
+                  const { data } = await chatApi.renameChat({ projectId: selectedProjectId, chatId: activeChat._id, title });
+                  const updated = data?.chat;
+                  if (updated?._id) {
+                    setProjectChats((prev) => prev.map((c) => (c._id === updated._id ? { ...c, title: updated.title } : c)));
+                    setActiveChat((prev) => (prev && prev._id === updated._id ? { ...prev, title: updated.title } : prev));
+                  }
+                } catch (e) {
+                  console.error('Rename failed', e);
+                }
+              }}
+              disabled={!activeChat?._id}
             >
-              Select datasets
+              Rename current chat
             </button>
           </div>
         </div>
@@ -205,6 +282,13 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
                 placeholder="Send a message..."
                 className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
               />
+              <input
+                type="file"
+                multiple
+                ref={fileInputRef}
+                onChange={(e) => setAttachFiles(Array.from(e.target.files || []))}
+                title="Attach files (chat-only; not saved to project)"
+              />
               <button type="submit" className="bg-blue-600 text-white rounded-lg px-5 py-3 flex items-center justify-center font-semibold hover:bg-blue-700">
                 <IconSend className="h-5 w-5" />
               </button>
@@ -212,6 +296,51 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
           </form>
         </div>
       </div>
+
+      {/* New Chat modal: upload/select datasets only at creation time */}
+      {showNewChatModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-800">Start a new chat</h3>
+            <p className="text-xs text-gray-500 mb-3">Optionally upload datasets to the project and select which ones this chat should use.</p>
+
+            <div className="border rounded p-3 mb-3">
+              <p className="text-sm font-medium text-gray-700">Upload datasets to project</p>
+              <input type="file" multiple onChange={handleModalUpload} className="mt-2" />
+              {modalUploading && <p className="text-xs text-blue-600 mt-2">Uploading…</p>}
+              {modalError && <p className="text-xs text-red-600 mt-2">{modalError}</p>}
+            </div>
+
+            <div className="border rounded p-3 mb-3 max-h-60 overflow-y-auto">
+              <p className="text-sm font-medium text-gray-700 mb-2">Select datasets for this chat</p>
+              {modalDatasets.length ? (
+                modalDatasets.map((d) => (
+                  <label key={d._id || d.url} className="flex items-center gap-2 text-sm py-1">
+                    <input
+                      type="checkbox"
+                      checked={modalSelectedIds.includes(d._id)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setModalSelectedIds((prev) =>
+                          checked ? [...prev, d._id] : prev.filter((id) => id !== d._id)
+                        );
+                      }}
+                    />
+                    <span className="truncate" title={d.name}>{d.name}</span>
+                  </label>
+                ))
+              ) : (
+                <p className="text-xs text-gray-500">No datasets uploaded yet.</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button className="px-4 py-2 text-sm rounded border hover:bg-gray-50" onClick={() => setShowNewChatModal(false)}>Cancel</button>
+              <button className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700" onClick={confirmCreateChat} disabled={!selectedProjectId}>Create chat</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

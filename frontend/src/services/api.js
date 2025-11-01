@@ -137,6 +137,8 @@ export const chatApi = {
   // NOTE: backend mounts chat router at /api/chat and defines route as POST /chat/ai,
   // so the full path is /api/chat/chat/ai here.
   aiReply: ({ projectId, chatId, content }) => api.post('/chat/chat/ai', { projectId, chatId, content }),
+  // Rename a chat (server-side persistence)
+  renameChat: ({ projectId, chatId, title }) => api.patch('/chat/chat/rename', { projectId, chatId, title }),
 };
 
 export default api;

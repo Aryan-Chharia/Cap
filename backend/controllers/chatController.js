@@ -135,14 +135,13 @@ const MODEL = process.env.GITHUB_AI_MODEL;
 async function chatHandler(req, res) { 
 	try {
 		let { chatId, projectId, content, selectedDatasets } = req.body;
-		const tempFiles = req.files || []; // max 3, not saved in DB
-
-		if (!projectId || (!content?.trim() && tempFiles.length === 0)) {
-			return res.status(400).json({
-				error: "projectId and at least one of content or files are required.",
-			});
-		}
-
+		const incomingFiles = req.files || [];
+		// Reduce chat-time files to lightweight metadata only (don't persist buffers or upload to Cloudinary)
+		const tempFiles = incomingFiles.map((f) => ({
+			originalname: f.originalname,
+			mimetype: f.mimetype,
+			size: f.size,
+		}));
 		// Normalize selectedDatasets from multipart form-data (could be JSON string, single value, or array)
 		if (selectedDatasets) {
 			if (typeof selectedDatasets === "string") {
@@ -160,6 +159,20 @@ async function chatHandler(req, res) {
 			if (!Array.isArray(selectedDatasets)) selectedDatasets = [selectedDatasets];
 		} else {
 			selectedDatasets = [];
+		}
+
+		// Allow either content, selectedDatasets, or files to create a message
+		if (
+			!projectId ||
+			(
+				!content?.trim() &&
+				(tempFiles.length === 0) &&
+				!(Array.isArray(selectedDatasets) && selectedDatasets.length > 0)
+			)
+		) {
+			return res.status(400).json({
+				error: "projectId and at least one of content, selectedDatasets or files are required.",
+			});
 		}
 
 		// Load project + team + members
@@ -189,7 +202,7 @@ async function chatHandler(req, res) {
 		if (chatId) {
 			chat = await Chat.findOne({ _id: chatId, project: projectId });
 		} else {
-			chat = await Chat.create({ project: projectId, messages: [] });
+			chat = await Chat.create({ project: projectId, title: "New chat", messages: [] });
 			project.chats.push(chat._id);
 			await project.save();
 		}
@@ -200,7 +213,7 @@ async function chatHandler(req, res) {
 			sender: "user",
 			content: content?.trim() || null,
 			selectedDatasets, // save selected dataset IDs
-			tempFiles, // temporary files for this message
+			tempFiles, // store only metadata for this message
 		});
 		chat.messages.push(userMsg._id);
 		await chat.save();
@@ -255,6 +268,8 @@ async function aiReplyHandler(req, res) {
 		const selectedDatasets = lastUserMsg?.selectedDatasets || [];
 		const tempFiles = lastUserMsg?.tempFiles || [];
 
+		// During chat, even if no datasets/files, proceed to use AI when user sends a message.
+
 		// Normalize dataset ids to strings for comparison with subdoc _id strings
 		const selectedDatasetIds = selectedDatasets.map((d) => d?.toString?.() || String(d));
 
@@ -275,7 +290,7 @@ async function aiReplyHandler(req, res) {
 			});
 		}
 
-		// Add temporary file info
+		// Add temporary file info (names only)
 		if (tempFiles.length > 0) {
 			const tempInfo = tempFiles.map((f) => f.originalname).join(", ");
 			aiPayload.push({
@@ -308,6 +323,49 @@ async function aiReplyHandler(req, res) {
 		return res.json({ botReply: botText, confidenceScore: confidence });
 	} catch (err) {
 		console.error("AI Reply Error:", err);
+		return res.status(500).json({ error: "Internal server error." });
+	}
+}
+
+// PATCH /chat/rename
+async function renameChat(req, res) {
+	try {
+		const { chatId, projectId, title } = req.body;
+		if (!chatId || !projectId || !title || !title.trim()) {
+			return res.status(400).json({ error: "chatId, projectId and title are required." });
+		}
+
+		// Load project and verify access (same checks as other handlers)
+		const project = await Project.findById(projectId).populate({
+			path: "team",
+			populate: { path: "members.user", select: "_id role" },
+		});
+		if (!project) return res.status(404).json({ error: "Project not found." });
+
+		const team = project.team;
+		const { userId, organization, role: globalRole } = req.user;
+		if (globalRole !== "superadmin") {
+			if (team.organization.toString() !== organization.toString()) {
+				return res.status(403).json({ error: "Not in this organization." });
+			}
+			const memberEntry = team.members.find(
+				(m) => m.user._id.toString() === userId.toString()
+			);
+			if (!memberEntry) {
+				return res.status(403).json({ error: "Not a member of this team." });
+			}
+		}
+
+		const updated = await Chat.findOneAndUpdate(
+			{ _id: chatId, project: projectId },
+			{ title: title.trim() },
+			{ new: true }
+		);
+		if (!updated) return res.status(404).json({ error: "Chat not found." });
+
+		return res.json({ success: true, chat: updated });
+	} catch (err) {
+		console.error("Rename Chat Error:", err);
 		return res.status(500).json({ error: "Internal server error." });
 	}
 }
@@ -371,7 +429,7 @@ const createChatManually = async (req, res) => {
 		const project = await Project.findById(projectId);
 		if (!project) return res.status(404).json({ error: "Project not found." });
 
-		const newChat = await Chat.create({ project: project._id, messages: [] });
+		const newChat = await Chat.create({ project: project._id, title: "New chat", messages: [] });
 		project.chats.push(newChat._id);
 		await project.save();
 
@@ -389,4 +447,5 @@ module.exports = {
 	aiReplyHandler,
 	getChatHistory,
 	createChatManually,
+	renameChat,
 };
