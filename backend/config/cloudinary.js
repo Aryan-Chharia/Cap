@@ -11,8 +11,10 @@ const storage = new CloudinaryStorage({
 	cloudinary,
 	params: {
 		folder: "project-datasets",
+		// Accept spreadsheets and CSVs; Cloudinary should treat these as raw files
 		allowed_formats: ["csv", "xls", "xlsx"],
-		resource_type: "auto",
+		allowedFormats: ["csv", "xls", "xlsx"], // adapter uses camelCase
+		resource_type: "raw",
 	},
 });
 

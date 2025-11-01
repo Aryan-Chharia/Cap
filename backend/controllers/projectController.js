@@ -240,21 +240,21 @@ const uploadDataset = async (req, res) => {
 		const project = await Project.findById(projectId);
 		if (!project) return res.status(404).json({ error: "Project not found" });
 
-		// Ensure user is team_admin
+		// Ensure user is a member of the team (admin or regular member)
 		const team = await Team.findById(project.team).populate("members.user");
 		const member = team.members.find(
 			(m) => m.user._id.toString() === req.user.userId
 		);
 
-		if (!member || member.role !== "team_admin")
+		if (!member)
 			return res
 				.status(403)
-				.json({ error: "Only team admins can upload datasets" });
+				.json({ error: "Only team members can upload datasets" });
 
 		for (const file of files) {
 			project.datasets.push({
 				name: file.originalname,
-				url: file.path,
+				url: file.path, // multer-storage-cloudinary provides the hosted URL in path
 				uploadedBy: req.user.userId,
 			});
 		}
@@ -265,7 +265,7 @@ const uploadDataset = async (req, res) => {
 			.json({ message: "Datasets uploaded successfully", project });
 	} catch (err) {
 		console.error("Upload Dataset Error:", err);
-		res.status(500).json({ error: "Server error" });
+		res.status(500).json({ error: err?.message || "Server error" });
 	}
 };
 

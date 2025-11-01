@@ -60,10 +60,25 @@ router.patch("/:projectId", verifyTeamAdminForProject, updateProject);
  */
 router.delete("/:projectId", verifyTeamAdminForProject, deleteProject);
 
+// Wrap multer to return JSON on validation errors (e.g., invalid file type)
 router.post(
 	"/:projectId/datasets",
-	verifyTeamAdminForProject,
-	upload.array("files", 10),
+	(req, res, next) => {
+		upload.array("files", 10)(req, res, (err) => {
+			if (err) {
+				const msg = err.message || "Upload failed";
+				const invalid = /invalid|unsupported|format|extension/i.test(msg || "");
+				const status = Number(err?.http_code) || 400;
+				return res.status(status).json({
+					error: invalid
+						? "Unsupported file type. Allowed: csv, xls, xlsx."
+						: msg,
+					code: err?.code || undefined,
+				});
+			}
+			next();
+		});
+	},
 	uploadDataset
 );
 

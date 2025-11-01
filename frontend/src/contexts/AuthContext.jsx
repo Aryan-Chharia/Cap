@@ -48,8 +48,17 @@ export const AuthProvider = ({ children }) => {
         response = await authApi.loginOrganization(credentials);
       }
 
-      const { token, user: userData } = response.data;
-      
+      // Support both user-login ({ token, user }) and org-login ({ token, data }) shapes
+      const { token } = response.data || {};
+      let userData = response.data?.user;
+      if (!userData && response.data?.data) {
+        const d = response.data.data;
+        userData = { id: d.id, name: d.name, email: d.email, role: 'organisation' };
+      }
+      if (!token || !userData) {
+        throw new Error('Invalid login response');
+      }
+
       // Store token and user data
       localStorage.setItem('authToken', token);
       localStorage.setItem('user', JSON.stringify(userData));
@@ -59,7 +68,7 @@ export const AuthProvider = ({ children }) => {
       
       return { success: true, data: userData };
     } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Login failed';
+      const errorMessage = err.response?.data?.error || err.response?.data?.message || 'Login failed';
       setError(errorMessage);
       return { success: false, error: errorMessage };
     } finally {
@@ -81,7 +90,7 @@ export const AuthProvider = ({ children }) => {
 
       return { success: true, data: response.data };
     } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Registration failed';
+      const errorMessage = err.response?.data?.error || err.response?.data?.message || 'Registration failed';
       setError(errorMessage);
       return { success: false, error: errorMessage };
     } finally {

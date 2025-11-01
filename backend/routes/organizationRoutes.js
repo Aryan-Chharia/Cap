@@ -11,7 +11,7 @@ const {
 	listOrganizations,
 	updateOrganization,
 	deleteOrganization,
-	getAllMembers,
+	getAllMembers, 
 	makeCreator,
 } = require("../controllers/organizationController");
 const { verifyToken } = require("../middlewares/auth");

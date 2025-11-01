@@ -76,13 +76,20 @@ export const organizationApi = {
 
 // Team API functions
 export const teamApi = {
+  // Backend routes mounted at /api/teams
+  // List teams the authenticated user belongs to
   getTeams: () => api.get('/teams'),
-  createTeam: (teamData) => api.post('/teams', teamData),
+  // Get a specific team (populates members)
   getTeam: (id) => api.get(`/teams/${id}`),
-  updateTeam: (id, data) => api.put(`/teams/${id}`, data),
+  // Create team (backend expects /create)
+  createTeam: (teamData) => api.post('/teams/create', teamData),
+  // Delete team
   deleteTeam: (id) => api.delete(`/teams/${id}`),
-  addMember: (teamId, memberData) => api.post(`/teams/${teamId}/members`, memberData),
-  removeMember: (teamId, memberId) => api.delete(`/teams/${teamId}/members/${memberId}`),
+  // Membership management (must be team_admin)
+  addMember: (teamId, memberData) => api.put(`/teams/${teamId}/add-member`, memberData),
+  removeMember: (teamId, payload) => api.put(`/teams/${teamId}/remove-member`, payload),
+  changeAdmin: (teamId, payload) => api.patch(`/teams/${teamId}/change-admin`, payload),
+  changeAccess: (teamId, payload) => api.patch(`/teams/${teamId}/change-access`, payload),
 };
 
 // Project API functions
@@ -94,10 +101,10 @@ export const projectApi = {
   deleteProject: (id) => api.delete(`/projects/${id}`),
   // Datasets per project
   listDatasets: (projectId) => api.get(`/projects/${projectId}/datasets`),
-  uploadDatasets: (projectId, files) => {
+  uploadDatasets: (projectId, files) => { 
     const form = new FormData();  
     Array.from(files || []).forEach((file) => form.append('files', file));
-    // Note: multipart/form-data; axios will set correct headers for FormData
+    // Ensure multipart is used (overrides default application/json header)
     return api.post(`/projects/${projectId}/datasets`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
@@ -127,7 +134,9 @@ export const chatApi = {
     return api.post('/chat/chat', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   // Ask AI to reply using existing chat context
-  aiReply: ({ projectId, chatId, content }) => api.post('/chat/ai', { projectId, chatId, content }),
+  // NOTE: backend mounts chat router at /api/chat and defines route as POST /chat/ai,
+  // so the full path is /api/chat/chat/ai here.
+  aiReply: ({ projectId, chatId, content }) => api.post('/chat/chat/ai', { projectId, chatId, content }),
 };
 
 export default api;

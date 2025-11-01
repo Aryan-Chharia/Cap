@@ -79,18 +79,23 @@ const registerUser = async (req, res, next) => {
 			expiresAt,
 		});
 
-		// Send verification email
+		// Send verification email (with dev fallback)
 		const mailOptions = {
 			from: process.env.EMAIL_USER,
 			to: email,
 			subject: "Verify Your Email",
 			text: `Your verification code is: ${verificationCode}`,
 		};
-		await transporter.sendMail(mailOptions);
+		try {
+			await transporter.sendMail(mailOptions);
+		} catch (mailErr) {
+			console.warn("Email send failed; logging code for local/Vercel usage:", mailErr?.message || mailErr);
+			console.log("VERIFICATION CODE:", verificationCode);
+		}
 
 		return res.status(200).json({
 			success: true,
-			message: "Verification code sent to your email.",
+			message: "Verification code sent. Check your email or server logs.",
 		});
 	} catch (error) {
 		next(error);
@@ -153,7 +158,8 @@ const verifyUser = async (req, res, next) => {
 
 		// Remove pending user entry and save new user
 		await PendingUser.deleteOne({ email: pending.email });
-		newUser.$locals.skipHashing = true; // Prevent re-hashing since already hashed
+		// Password is already hashed in PendingUser pre-save; prevent re-hashing
+		newUser.$locals.skipHashing = true;
 		await newUser.save();
 
 		// Generate JWT token for the verified user

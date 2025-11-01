@@ -2,21 +2,24 @@ import React, { useState } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import RoleSelectionPage from './pages/RoleSelectionPage';
 import AuthPage from './pages/AuthPage';
-import UserDashboard from './pages/UserDashboard';
 import OrganisationDashboard from './pages/OrganisationDashboard';
+import ProjectPage from './pages/ProjectPage.jsx';
+import ChatPage from './pages/ChatPage.jsx';
+import DatasetSelectionPage from './pages/DatasetSelectionPage.jsx';
 
 export default function App() {
   const [page, setPage] = useState('roleSelect');
   const [role, setRole] = useState(null);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
 
   const handleRoleSelect = (selectedRole) => {
     setRole(selectedRole);
-    setPage('auth');
+    setPage('auth'); 
   };
 
   const handleAuthSuccess = (userData) => {
     if (userData.role === 'user' || role === 'user') {
-      setPage('userDashboard');
+      setPage('userProjects');
     } else if (userData.role === 'organisation' || role === 'organisation') {
       setPage('orgDashboard');
     }
@@ -34,8 +37,33 @@ export default function App() {
         return <RoleSelectionPage onRoleSelect={handleRoleSelect} />;
       case 'auth':
         return <AuthPage role={role} onAuthSuccess={handleAuthSuccess} />;
-      case 'userDashboard':
-        return <UserDashboard onLogout={handleLogout} />;
+      case 'userProjects':
+        return (
+          <ProjectPage
+            onLogout={handleLogout}
+            navigateTo={setPage}
+            selectedProjectId={selectedProjectId}
+            setSelectedProjectId={setSelectedProjectId}
+          />
+        );
+      case 'userChat':
+        return (
+          <ChatPage
+            onLogout={handleLogout}
+            navigateTo={setPage}
+            selectedProjectId={selectedProjectId}
+            setSelectedProjectId={setSelectedProjectId}
+          />
+        );
+      case 'datasetSelect':
+        return (
+          <DatasetSelectionPage
+            onLogout={handleLogout}
+            navigateTo={setPage}
+            selectedProjectId={selectedProjectId}
+            setSelectedProjectId={setSelectedProjectId}
+          />
+        );
       case 'orgDashboard':
         return <OrganisationDashboard onLogout={handleLogout} />;
       default:

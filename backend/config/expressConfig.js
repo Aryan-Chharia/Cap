@@ -18,9 +18,18 @@ const session = require("express-session");
 const expressConfig = (app) => {
 	app.use(bodyParser.json());
 	app.use(bodyParser.urlencoded({ extended: true }));
-	// CORS configuration for development
+	// CORS configuration for local and Vercel deployments
 	app.use(cors({
-		origin: ['http://localhost:3001', 'http://127.0.0.1:3001', 'http://localhost:5173', 'http://127.0.0.1:5173'],
+		origin: (origin, callback) => {
+			if (!origin) return callback(null, true); // allow non-browser requests
+			const allowList = [
+				/^http:\/\/localhost:(3001|5173)$/,
+				/^http:\/\/127\.0\.0\.1:(3001|5173)$/,
+				/^https?:\/\/[a-z0-9-]+\.(?:[a-z0-9-]+\.)*vercel\.app$/i,
+			];
+			const allowed = allowList.some((re) => re.test(origin));
+			return callback(null, allowed);
+		},
 		credentials: true,
 		methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
 		allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
