@@ -132,15 +132,34 @@ const MODEL = process.env.GITHUB_AI_MODEL;
 // 	}
 // }
 // POST /chat
-async function chatHandler(req, res) {
+async function chatHandler(req, res) { 
 	try {
-		const { chatId, projectId, content, selectedDatasets } = req.body;
+		let { chatId, projectId, content, selectedDatasets } = req.body;
 		const tempFiles = req.files || []; // max 3, not saved in DB
 
 		if (!projectId || (!content?.trim() && tempFiles.length === 0)) {
 			return res.status(400).json({
 				error: "projectId and at least one of content or files are required.",
 			});
+		}
+
+		// Normalize selectedDatasets from multipart form-data (could be JSON string, single value, or array)
+		if (selectedDatasets) {
+			if (typeof selectedDatasets === "string") {
+				try {
+					const parsed = JSON.parse(selectedDatasets);
+					if (Array.isArray(parsed)) selectedDatasets = parsed;
+					else selectedDatasets = [parsed];
+				} catch (_) {
+					// Fallback: comma-separated or single id
+					selectedDatasets = selectedDatasets.includes(",")
+						? selectedDatasets.split(",").map((s) => s.trim()).filter(Boolean)
+						: [selectedDatasets];
+				}
+			}
+			if (!Array.isArray(selectedDatasets)) selectedDatasets = [selectedDatasets];
+		} else {
+			selectedDatasets = [];
 		}
 
 		// Load project + team + members
@@ -236,6 +255,9 @@ async function aiReplyHandler(req, res) {
 		const selectedDatasets = lastUserMsg?.selectedDatasets || [];
 		const tempFiles = lastUserMsg?.tempFiles || [];
 
+		// Normalize dataset ids to strings for comparison with subdoc _id strings
+		const selectedDatasetIds = selectedDatasets.map((d) => d?.toString?.() || String(d));
+
 		// Prepare AI payload
 		const aiPayload = [
 			{ role: "system", content: "You are a helpful assistant." },
@@ -243,9 +265,9 @@ async function aiReplyHandler(req, res) {
 		];
 
 		// Add dataset info
-		if (selectedDatasets.length) {
+		if (selectedDatasetIds.length) {
 			const datasetsInfo = project.datasets
-				.filter((d) => selectedDatasets.includes(d._id.toString()))
+				.filter((d) => selectedDatasetIds.includes(d._id.toString()))
 				.map((d) => `Dataset: ${d.name}, URL: ${d.url}`);
 			aiPayload.push({
 				role: "system",

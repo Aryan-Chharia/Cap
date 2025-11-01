@@ -1,7 +1,15 @@
 import React from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { IconLogOut } from './Icons.jsx';
 
 export default function AppHeader({ onLogout }) {
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+    onLogout();
+  };
+
   return (
     <header className="bg-white shadow-md w-full">
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -10,7 +18,7 @@ export default function AppHeader({ onLogout }) {
             <span className="font-bold text-2xl text-blue-600">MyApp</span>
           </div>
           <button
-            onClick={onLogout}
+            onClick={handleLogout}
             className="flex items-center justify-center bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
           >
             <IconLogOut />

@@ -40,6 +40,14 @@ const registerUser = async (req, res, next) => {
 		email = email.toLowerCase().trim();
 		organization = organization.toLowerCase().trim();
 
+		// Prevent duplicate registrations for existing users
+		const existingUser = await User.findOne({ email });
+		if (existingUser) {
+			return res
+				.status(409)
+				.json({ error: "User already registered. Please log in instead." });
+		}
+
 		// Check if organization exists by domain
 		const org = await Organization.findOne({ domain: organization });
 		if (!org) {
@@ -96,25 +104,31 @@ const registerUser = async (req, res, next) => {
 const verifyUser = async (req, res, next) => {
 	try {
 		const { email, verificationCode } = req.body;
+		
 		if (!email || !verificationCode) {
 			return res
 				.status(400)
 				.json({ error: "Email and verification code are required." });
 		}
 
+		// Normalize inputs
+		const normalizedEmail = email.toLowerCase().trim();
+		// Keep only digits from the incoming code to avoid whitespace/dash issues
+		const normalizedCode = verificationCode.toString().trim().replace(/\D/g, "");
+
 		// Find the pending user entry
 		const pending = await PendingUser.findOne({
-			email: email.toLowerCase().trim(),
+			email: normalizedEmail,
 		});
+		
 		if (!pending) {
 			return res.status(400).json({ error: "No pending verification found." });
 		}
 
 		// Check if code matches and has not expired
-		if (
-			pending.verificationCode !== verificationCode ||
-			pending.expiresAt < Date.now()
-		) {
+		const storedCode = (pending.verificationCode || "").toString().trim().replace(/\D/g, "");
+		const isExpired = new Date(pending.expiresAt).getTime() < Date.now();
+		if (storedCode !== normalizedCode || isExpired) {
 			return res
 				.status(400)
 				.json({ error: "Invalid or expired verification code." });
@@ -129,15 +143,37 @@ const verifyUser = async (req, res, next) => {
 			isVerified: true,
 		});
 
+		// Defensive: avoid duplicate users in rare race conditions
+		const alreadyExists = await User.findOne({ email: pending.email });
+		if (alreadyExists) {
+			// Cleanup pending entry and inform client
+			await PendingUser.deleteOne({ email: pending.email });
+			return res.status(409).json({ error: "User already verified. Please log in." });
+		}
+
 		// Remove pending user entry and save new user
 		await PendingUser.deleteOne({ email: pending.email });
 		newUser.$locals.skipHashing = true; // Prevent re-hashing since already hashed
 		await newUser.save();
 
+		// Generate JWT token for the verified user
+		const token = jwt.sign(
+			{ userId: newUser._id, email: newUser.email },
+			process.env.JWT_SECRET,
+			{ expiresIn: "7d" }
+		);
+
 		return res.json({
 			success: true,
 			message: "Email successfully verified. User registered.",
-			data: { userId: newUser._id, email: newUser.email },
+			token,
+			user: {
+				id: newUser._id,
+				name: newUser.name,
+				email: newUser.email,
+				role: 'user',
+				organization: newUser.organization
+			},
 		});
 	} catch (error) {
 		next(error);

@@ -20,6 +20,17 @@ const MessageSchema = new mongoose.Schema(
 			type: String,
 			trim: true,
 		},
+		// Optional: store selected datasets for this user message
+		selectedDatasets: [
+			{
+				type: mongoose.Schema.Types.ObjectId,
+			},
+		],
+		// Optional: store temporary uploaded file metadata for this message (as saved by multer)
+		tempFiles: {
+			type: Array,
+			default: [],
+		},
 		imageUrl: {
 			type: String,
 			default: null,
