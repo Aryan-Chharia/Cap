@@ -20,6 +20,56 @@ const ENDPOINT = process.env.GITHUB_AI_ENDPOINT;
 const MODEL = process.env.GITHUB_AI_MODEL;
 
 /**
+ * Output builders: keep them small and pure so storing/rendering can plug in later.
+ */
+function buildTextMessageOutput({ text, confidenceScore = null }) {
+	return {
+		type: "text",
+		data: {
+			text: String(text || ""),
+			confidenceScore: confidenceScore ?? null,
+		},
+	};
+}
+
+function buildChartOutput({
+	chartType = "bar",
+	title = "Sample Chart",
+} = {}) {
+	// Dummy Chart.js configuration; replace data source later without changing shape
+	return {
+		type: "chart",
+		data: {
+			config: {
+				type: chartType,
+				data: {
+					labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+					datasets: [
+						{
+							label: "Series A",
+							data: [12, 19, 3, 5, 2, 3],
+							backgroundColor: "rgba(59, 130, 246, 0.5)",
+							borderColor: "rgba(59, 130, 246, 1)",
+							borderWidth: 1,
+						},
+					],
+				},
+				options: {
+					responsive: true,
+					plugins: {
+						legend: { position: "top" },
+						title: { display: true, text: title },
+					},
+					scales: {
+						y: { beginAtZero: true },
+					},
+				},
+			},
+		},
+	};
+}
+
+/**
  * @function
  * @name chatHandler
  * @description
@@ -352,7 +402,17 @@ async function aiReplyHandler(req, res) {
 		chat.messages.push(botMsg._id);
 		await chat.save();
 
-		return res.json({ botReply: botText, confidenceScore: confidence });
+		// Build structured outputs for UI consumption
+		const outputs = [];
+		// If prompt requests a chart, only return a chart output (suppress text analysis in outputs)
+		const wantsChart = /\b(chart|graph|plot)\b/i.test(content || "");
+		if (wantsChart) {
+			outputs.push(buildChartOutput({ chartType: "bar", title: "AI Suggested Chart" }));
+		} else {
+			outputs.push(buildTextMessageOutput({ text: botText, confidenceScore: confidence }));
+		}
+
+		return res.json({ botReply: botText, confidenceScore: confidence, outputs });
 	} catch (err) {
 		console.error("AI Reply Error:", err);
 		return res.status(500).json({ error: "Internal server error." });
@@ -477,6 +537,8 @@ const createChatManually = async (req, res) => {
 module.exports = {
 	chatHandler,
 	aiReplyHandler,
+	buildTextMessageOutput,
+	buildChartOutput,
 	getChatHistory,
 	createChatManually,
 	renameChat,

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Chart, registerables } from 'chart.js';
 import AppHeader from '../components/AppHeader.jsx';
 import { chatApi, projectApi } from '../services/api';
 import { IconSend, IconBot } from '../components/Icons.jsx';
@@ -17,6 +18,41 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
   const [modalError, setModalError] = useState('');
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Register Chart.js globally once
+  useEffect(() => {
+    try { Chart.register(...registerables); } catch (_) {}
+  }, []);
+
+  function ChartBubble({ config }) {
+    const canvasRef = useRef(null);
+    const chartInstanceRef = useRef(null);
+    useEffect(() => {
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx) return;
+      // Destroy previous instance if re-rendering
+      if (chartInstanceRef.current) {
+        try { chartInstanceRef.current.destroy(); } catch (_) {}
+        chartInstanceRef.current = null;
+      }
+      try {
+        chartInstanceRef.current = new Chart(ctx, config);
+      } catch (e) {
+        console.error('Chart render error', e);
+      }
+      return () => {
+        if (chartInstanceRef.current) {
+          try { chartInstanceRef.current.destroy(); } catch (_) {}
+          chartInstanceRef.current = null;
+        }
+      };
+    }, [config]);
+    return (
+      <div className="bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none p-3">
+        <canvas ref={canvasRef} style={{ width: '100%', height: 260 }} />
+      </div>
+    );
+  }
 
   // Load projects on mount
   useEffect(() => { 
@@ -163,10 +199,27 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
       });
       // During chat, if the user sent a message (typed or auto 'Analyze these'), always ask AI to reply
       const { data } = await chatApi.aiReply({ projectId: selectedProjectId, chatId: activeChat._id, content: currentText });
+      // Backward-compatible text handling
       const botText = data?.botReply;
-      if (botText) {
-        setMessages((prev) => [...prev, { from: 'bot', text: botText }]);
+      const outputs = Array.isArray(data?.outputs) ? data.outputs : [];
+      const additions = [];
+      // Prefer structured outputs when available
+      if (outputs.length) {
+        outputs.forEach((o) => {
+          if (!o || !o.type) return;
+          if (o.type === 'text') {
+            const txt = o?.data?.text || '';
+            if (txt) additions.push({ from: 'bot', type: 'text', text: txt });
+          } else if (o.type === 'chart') {
+            // Store chart config for rendering
+            const cfg = o?.data?.config || o?.data || {};
+            additions.push({ from: 'bot', type: 'chart', chart: cfg });
+          }
+        });
+      } else if (botText) {
+        additions.push({ from: 'bot', type: 'text', text: botText });
       }
+      if (additions.length) setMessages((prev) => [...prev, ...additions]);
     } catch (e) {
       console.error('Message send failed', e);
       setMessages((prev) => [...prev, { from: 'bot', text: 'There was an error processing your message.' }]);
@@ -264,9 +317,13 @@ export default function ChatPage({ onLogout, navigateTo, selectedProjectId, setS
                         <IconBot className="h-5 w-5 text-gray-600" />
                       </div>
                     )}
-                    <div className={`${msg.from === 'user' ? 'bg-blue-600 text-white rounded-2xl rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'} py-2 px-4 text-sm`} style={{ wordBreak: 'break-word' }}>
-                      {msg.text}
-                    </div>
+                    {msg.type === 'chart' ? (
+                      <ChartBubble config={msg.chart} />
+                    ) : (
+                      <div className={`${msg.from === 'user' ? 'bg-blue-600 text-white rounded-2xl rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'} py-2 px-4 text-sm`} style={{ wordBreak: 'break-word' }}>
+                        {msg.text}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

@@ -131,12 +131,12 @@ export const chatApi = {
       form.append('selectedDatasets', JSON.stringify(selectedDatasetIds));
     }
     // Endpoint is /api/chat/chat (router.use('/api/chat', chatRouter) + router.post('/chat', ...))
-    return api.post('/chat/chat', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return api.post('/chat/chat', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
   },
   // Ask AI to reply using existing chat context
   // NOTE: backend mounts chat router at /api/chat and defines route as POST /chat/ai,
   // so the full path is /api/chat/chat/ai here.
-  aiReply: ({ projectId, chatId, content }) => api.post('/chat/chat/ai', { projectId, chatId, content }),
+  aiReply: ({ projectId, chatId, content }) => api.post('/chat/chat/ai', { projectId, chatId, content }, { timeout: 60000 }),
   // Rename a chat (server-side persistence)
   renameChat: ({ projectId, chatId, title }) => api.patch('/chat/chat/rename', { projectId, chatId, title }),
 };
