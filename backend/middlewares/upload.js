@@ -2,27 +2,39 @@ const multer = require("multer");
 const path = require("path");
 const { datasetStorage } = require("../config/cloudinary");
 
-// Dataset uploads: only csv/xls/xlsx
 const dsAllowedExts = ["csv", "xls", "xlsx"];
 const dsAllowedMimes = [
-  "text/csv",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/octet-stream",
+	"text/csv",
+	"application/vnd.ms-excel",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	"application/octet-stream",
 ];
+
 const datasetFileFilter = (req, file, cb) => {
-  const ext = (path.extname(file.originalname || "").toLowerCase() || "").replace(".", "");
-  if (dsAllowedExts.includes(ext) || dsAllowedMimes.includes(file.mimetype)) {
-    return cb(null, true);
-  }
-  return cb(new Error("Unsupported file type. Allowed: csv, xls, xlsx."));
+	const ext = path.extname(file.originalname).slice(1).toLowerCase();
+	const mime = file.mimetype;
+
+	if (dsAllowedExts.includes(ext) || dsAllowedMimes.includes(mime)) {
+		return cb(null, true);
+	}
+	return cb(new Error("Unsupported file type. Allowed: csv, xls, xlsx."));
 };
 
-// Chat temp uploads: restrict to same dataset types (csv/xls/xlsx)
 const chatFileFilter = datasetFileFilter;
 
-const datasetUpload = multer({ storage: datasetStorage, fileFilter: datasetFileFilter, limits: { files: 10 } });
-// For chat-time additional datasets, do NOT upload to Cloudinary. Keep in memory and only forward metadata to AI.
-const chatUpload = multer({ storage: multer.memoryStorage(), fileFilter: chatFileFilter, limits: { files: 100 } });
+// Dataset upload — Cloudinary storage
+
+const datasetUpload = multer({
+	storage: datasetStorage,
+	fileFilter: datasetFileFilter,
+	limits: { files: 10, fileSize: 10 * 1024 * 1024 },
+});
+
+// Chat upload — in-memory
+const chatUpload = multer({
+	storage: multer.memoryStorage(),
+	fileFilter: chatFileFilter,
+	limits: { files: 100 },
+});
 
 module.exports = { datasetUpload, chatUpload };
