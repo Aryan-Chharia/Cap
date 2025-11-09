@@ -7,25 +7,22 @@ cloudinary.config({
 	api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Storage for project datasets (restricted formats)
 const datasetStorage = new CloudinaryStorage({
 	cloudinary,
-	params: {
-		folder: "project-datasets",
-		// Accept spreadsheets and CSVs; Cloudinary should treat these as raw files
-		allowed_formats: ["csv", "xls", "xlsx"],
-		allowedFormats: ["csv", "xls", "xlsx"], // adapter uses camelCase
+	params: async (req, file) => ({
+		folder: "caps-datasets",
 		resource_type: "raw",
-	},
+		format: file.originalname.split(".").pop(), // keep original extension
+		public_id: file.originalname.replace(/\.[^/.]+$/, ""),
+	}),
 });
 
-// Storage for chat temporary files (broad formats, raw)
 const chatTempStorage = new CloudinaryStorage({
 	cloudinary,
 	params: {
 		folder: "chat-temp",
 		resource_type: "raw",
-		// No explicit allowed_formats to permit a wide range of raw files
 	},
 });
+
 module.exports = { cloudinary, datasetStorage, chatTempStorage };
